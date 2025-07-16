@@ -1,0 +1,31 @@
+name: .NET CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]  # 當你 push 到 main 分支時執行
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: 1️⃣ 下載程式碼
+      uses: actions/checkout@v3
+
+    - name: 2️⃣ 安裝 .NET SDK
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'  # 根據你使用的版本調整
+
+    - name: 3️⃣ 還原 NuGet 套件
+      run: dotnet restore
+
+    - name: 4️⃣ 編譯專案
+      run: dotnet build --no-restore --configuration Release
+
+    - name: 5️⃣ 執行測試（如有）
+      run: dotnet test --no-build --verbosity normal
+
+    # 🔽 若你有部署需求，可加入以下（需額外設定機密）
+    # - name: Deploy to FTP / Azure / IIS
+    #   run: dotnet publish ...
