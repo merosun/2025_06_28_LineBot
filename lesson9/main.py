@@ -1,11 +1,16 @@
-from flask import Flask,render_template_string,request,jsonify
+from flask import Flask,render_template_string, request, jsonify,abort
 from google import genai
 from dotenv import load_dotenv
 import os
-
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import *
 load_dotenv()
+
 app = Flask(__name__)
-client = genai.Client(api_key = os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GENAI_API_KEY"))
+line_bot_api = LineBotApi(os.getenv("CHANNEL_ACCESS_TOKEN"))
+handler = WebhookHandler(os.getenv("CHANNEL_SECRET"))
 
 @app.route("/")
 def index():
@@ -64,36 +69,37 @@ def index():
     '''
     return render_template_string(html)
 
-
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
-    question = data.get("question", "").strip()
+    question = data.get('question', '').strip()
     if not question:
-        return jsonify({"error": "未輸入問題"}), 400
-
+        return jsonify({'error': '未輸入問題'}), 400
     try:
-        resp = client.models.generate_content(
-            model="gemini-2.5-flash",  
-            contents=f"{question}\n請用 HTML 格式輸出。"
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", contents=f"{question},回應請輸出成為html格式,請記得您的名字是`致理小助手`"
         )
-
-        # 主路徑：response.text；備援：從 candidates 抽文字
-        html_format = getattr(resp, "text", None)
-        if not html_format and getattr(resp, "candidates", None):
-            parts = resp.candidates[0].content.parts
-            html_format = "".join(getattr(p, "text", "") for p in parts)
-
-        if not html_format:
-            return jsonify({"error": "模型未回傳文字內容"}), 500
-
-        # 去掉可能包起來的 fenced code
-        html_format = html_format.replace("```html", "").replace("```", "")
-        return jsonify({"html": html_format})
+        html_format = response.text.replace("```html","").replace("```","")
+        return jsonify({'html': html_format})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
-# if __name__ == "__main__":
-#     app.run(debug=True)
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers['X-Line-Signature']
+    body = request.get_data(as_text=True)
+    app.logger.info("Request body: " + body)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+    return 'OK'
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
     
-    
+    response = client.models.generate_content(
+    model="gemini-2.5-flash", contents=event.message.text
+    )
+    message = TextSendMessage(text=response.text)
+    line_bot_api.reply_message(event.reply_token, message)
